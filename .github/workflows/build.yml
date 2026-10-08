@@ -1,0 +1,86 @@
+name: Build AURA debug APK
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Check that all files are in place
+        run: |
+          problems=0
+          for f in \
+            settings.gradle.kts \
+            build.gradle.kts \
+            gradle.properties \
+            app/build.gradle.kts \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/res/values/strings.xml \
+            app/src/main/res/values/themes.xml \
+            app/src/main/res/drawable/ic_launcher_foreground.xml \
+            app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
+            app/src/main/java/com/aura/app/MainActivity.kt \
+            app/src/main/java/com/aura/app/core/OrbState.kt \
+            app/src/main/java/com/aura/app/core/AuraController.kt \
+            app/src/main/java/com/aura/app/ui/AuraOrb.kt \
+            app/src/main/java/com/aura/app/ui/AuraScreen.kt \
+            app/src/main/java/com/aura/app/ui/theme/AuraTheme.kt \
+            app/src/main/java/com/aura/app/voice/AuraLanguage.kt \
+            app/src/main/java/com/aura/app/voice/SpeechInput.kt \
+            app/src/main/java/com/aura/app/voice/SpeechOutput.kt \
+            app/src/main/java/com/aura/app/brain/PlaceholderBrain.kt \
+            app/src/main/java/com/aura/app/safety/PermissionHelper.kt \
+            app/src/main/java/com/aura/app/logs/AuraLog.kt
+          do
+            if [ ! -f "$f" ]; then
+              echo "MISSING FILE: $f"
+              problems=1
+            fi
+          done
+          while IFS= read -r f; do
+            dir=$(dirname "${f#app/src/main/java/}" | tr '/' '.')
+            if ! grep -qE "^package ${dir}[[:space:]]*\$" "$f"; then
+              echo "WRONG PACKAGE LINE in $f (it must say: package $dir)"
+              problems=1
+            fi
+          done < <(find app/src/main/java -name '*.kt')
+          if [ "$problems" -ne 0 ]; then
+            echo "Fix the problems above, then run the workflow again."
+            exit 1
+          fi
+          echo "All 22 files are in place."
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        run: gradle assembleDebug --stacktrace --console=plain
+
+      - name: Save the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
