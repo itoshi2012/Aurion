@@ -1,4 +1,4 @@
-name: Build AURA debug APK
+name: Build Aurion debug APK
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Get the code
         uses: actions/checkout@v4
@@ -63,6 +63,17 @@ jobs:
           fi
           echo "All 22 files are in place."
 
+      - name: Check that Maven servers are reachable
+        run: |
+          for url in \
+            https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.23/kotlin-stdlib-1.9.23.pom \
+            https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/8.5.2/gradle-8.5.2.pom \
+            https://plugins.gradle.org/m2/org/jetbrains/kotlin/kotlin-gradle-plugin/2.0.20/kotlin-gradle-plugin-2.0.20.pom
+          do
+            code=$(curl -s -o /dev/null -m 30 -w "%{http_code}" "$url" || true)
+            echo "HTTP $code  $url"
+          done
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -73,14 +84,26 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+          cache-disabled: true
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace --console=plain
+      - name: Build debug APK (retries up to 3 times)
+        run: |
+          java -version
+          gradle --version
+          for attempt in 1 2 3; do
+            echo "Build attempt $attempt of 3"
+            if gradle assembleDebug --refresh-dependencies --stacktrace --console=plain; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed."
+            sleep 20
+          done
+          exit 1
 
       - name: Save the APK
         uses: actions/upload-artifact@v4
         with:
-          name: aura-debug-apk
+          name: aurion-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
